@@ -7,7 +7,7 @@ dependencies retain their own licenses; the project license does not replace the
 
 - **Caveat** — Copyright 2014 The Caveat Project Authors. Licensed under the
   SIL Open Font License 1.1. See [the bundled license](src/assets/Caveat-OFL.txt).
-  This applies to the Caveat TTF and WOFF2 files, including the headline subset.
+  This applies to the bundled Caveat headline WOFF2 subset.
 - **Nothing You Could Do** — Copyright 2010 Kimberly Geswein. Licensed under the
   SIL Open Font License 1.1. See [the bundled license](src/assets/NothingYouCouldDo-OFL.txt).
 

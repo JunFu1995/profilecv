@@ -8,6 +8,28 @@ Profile CV 是一个以浏览器本地存储为基础的开源简历工作台。
 
 [在线体验](https://profilecv.pages.dev) · [快速开始](#快速开始) · [数据与隐私](#数据与隐私) · [MIT License](LICENSE)
 
+## 项目截图
+
+以下画面来自实际运行的项目，简历使用内置的虚构示例，未使用个人档案或 API key。
+
+### 首页
+
+从职业档案开始，了解按岗位制作简历的流程。
+
+![Profile CV 首页：西湖水彩背景与项目介绍](docs/screenshots/home.jpg)
+
+### 简历编辑
+
+左侧编辑岗位简历，右侧实时查看 A4 排版，可调整模板、语言、主题色和显示比例。
+
+![简历编辑：虚构示例的编辑表单与实时排版预览](docs/screenshots/editor.png)
+
+### 成稿预览
+
+在简历库中放大预览，检查完整页面的内容、层次与分页效果。
+
+<img src="docs/screenshots/preview.png" alt="成稿预览：后端开发岗位的单页简历" width="800" />
+
 ## 功能
 
 | 模块 | 能做什么 |
@@ -16,7 +38,7 @@ Profile CV 是一个以浏览器本地存储为基础的开源简历工作台。
 | 投递版本 | 从素材库选取内容，为不同岗位保留独立文案、简介、JD 和版式；比较版本差异 |
 | 岗位匹配 | 基于 JD 关键词推荐素材、检查覆盖情况；结果是字面匹配参考，不是招聘系统评分 |
 | 简历导入 | 导入文字版 PDF、DOCX、TXT、Markdown 或粘贴文本，核对解析结果后再写入；支持 JSON 备份恢复 |
-| 排版与导出 | 四套模板、主题色、密度调整、A4 预览与智能一页；导出可选中文字的打印版 PDF 或图片版 PDF |
+| 排版与导出 | 四套模板、主题色、A4 预览与智能一页；通过浏览器打印保存可选中文字的 PDF |
 | 可选 AI | 文案改写、STAR 合成、简介建议、英文翻译和简历解析；改写建议可核对后采用 |
 | 科研材料 | 记录论文元数据，通过标题或 DOI 查询 Crossref，辅助组织科研经历 |
 | 本地数据保护 | 自动保存、恢复快照、导入撤销、JSON 备份和同一站点多标签页编辑保护 |
@@ -26,7 +48,7 @@ Profile CV 是一个以浏览器本地存储为基础的开源简历工作台。
 1. 打开首页，进入档案库，手动录入经历或导入已有简历。
 2. 核对内容，建立职业档案；也可以载入示例了解操作。
 3. 新建投递版本，填写目标岗位和 JD，选择相关经历并调整表达。
-4. 选择模板、主题与密度，预览分页；需要时使用 AI 润色或翻译。
+4. 选择模板与主题，预览分页；需要时使用智能一页、AI 润色或翻译。
 5. 导出 PDF，并定期通过「更多」导出 JSON 备份。
 
 ## 快速开始
@@ -101,7 +123,7 @@ pnpm dlx wrangler pages deploy dist --project-name YOUR_PROJECT_NAME
 
 ## 开发与验证
 
-技术栈：React 19、TypeScript、Vite；PDF 文本提取使用 pdf.js，DOCX 提取使用 Mammoth，图片版 PDF 使用 html-to-image 与 jsPDF。
+技术栈：React 19、TypeScript、Vite；PDF 文本提取使用 pdf.js，DOCX 提取使用 Mammoth，PDF 导出使用浏览器打印。
 
 ```text
 src/
@@ -132,12 +154,24 @@ PLAYWRIGHT_MODULE_PATH=/absolute/path/to/playwright/index.mjs node --import ./te
 
 可用 `TEST_BASE_URL` 指定测试地址。浏览器测试不是 `pnpm test` 的一部分。
 
+### 更新项目截图
+
+启动本地服务后，使用同一套 Playwright 环境运行：
+
+```bash
+PLAYWRIGHT_MODULE_PATH=/absolute/path/to/playwright/index.mjs node --import ./tests/register.mjs scripts/capture-screenshots.mjs
+```
+
+脚本在独立浏览器上下文中载入虚构示例，阻止外部网络请求，将三张截图写入 `docs/screenshots/`。只接受本地服务地址，不访问日常浏览器的档案或 AI 配置。
+
+当前清理范围与后续重构建议见 [维护说明](docs/MAINTENANCE.md)。
+
 ## 已知边界
 
 - 不提供账号系统或云端同步，数据需要自行备份。
 - 扫描版 PDF 暂不支持 OCR；复杂布局的文本提取、规则解析或 AI 解析都需要人工核对。
 - 智能一页有最小字号和压缩限制，不保证任意长度内容都能装进一页。
-- 图片版 PDF 的文字不可选择；需要文本检索或复制时，请使用文字版 PDF。
+- PDF 导出通过系统打印对话框完成，请选择「另存为 PDF」；显示与分页可能因浏览器和字体不同而略有差异。
 - AI 可能改错事实、数字或术语；模型建议不应代替本人核实。
 - 多标签页编辑保护需要浏览器支持 Web Locks；不支持时工作区会限制编辑。
 
