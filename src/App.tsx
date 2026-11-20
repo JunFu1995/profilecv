@@ -1,32 +1,19 @@
+import { useWorkspaceDocument } from './workspace/useWorkspaceDocument';
+import { useWorkspaceRoute } from './workspace/useWorkspaceRoute';
 import { defaultViewTranslation } from './translate';
 import './workspaceTheme.css';
-import { useEscapeKey } from './useEscapeKey';
-import { appendImport, loadImportUndo, saveImportUndo, clearImportUndo, type ImportUndo } from './import/apply';
+import { appendImport } from './import/apply';
 import { collectMaterialDeletions } from './materialItemsTrash';
-
 import { VariantJobContext } from './components/VariantJobContext';
 import { type LibrarySection } from './components/LibraryNav';
 import { RewriteDialog } from './components/RewriteDialog';
 import { SECTION_KEYS, sectionGroups, setBulletText, clearBulletText } from './variants';
 import { layoutFor, updateVariantLayout, type VariantLayout } from './variantLayout';
 import { ManualCreateVariant } from './components/ManualCreateVariant';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { FLUSH_WORKSPACE_EVENT } from './workspaceLock';
 import type { Doc, Master, Variant, SectionKey } from './types';
-import { emptyDoc, sampleDoc } from './data';
-import {
-  downloadJson,
-  getDemoFlag,
-  inspectStoredDoc,
-  loadSnapshot,
-  saveSnapshot,
-  preserveUnreadable,
-  loadUi,
-  saveDoc,
-  saveUi,
-  setDemoFlag,
-} from './storage';
+import { downloadJson, preserveUnreadable } from './storage';
 import { buildView, resolveVariant, editableVariantContent } from './variants';
 import { locate, locatePath, locatePreview, summarySelection } from './locate';
 import { localizeView, mergeTranslations, textKey } from './translate';
@@ -46,70 +33,21 @@ import { CompareDialog } from './components/CompareDialog';
 import { Preview, type PreviewControl } from './components/Preview';
 import { ImportDialog } from './components/ImportDialog';
 
-
-/** 首次打开给一份示例，让人立刻看到排版效果；有存档则恢复存档。 */
-function bootstrap(INITIAL_STORAGE: ReturnType<typeof inspectStoredDoc>): { doc: Doc; demo: boolean } {
-  if (INITIAL_STORAGE.status === 'ready') return { doc: INITIAL_STORAGE.doc, demo: getDemoFlag() };
-  if (INITIAL_STORAGE.status === 'error') return { doc: emptyDoc(), demo: false };
-  setDemoFlag(true);
-  return { doc: sampleDoc(), demo: true };
-}
-
-type WorkspaceMode = 'master' | 'resumes' | 'variant';
-
 export default function App({ onEndEditing }: { onEndEditing: () => void }) {
-  const DIRECT_EDITOR = /^\/editor\/?$/.test(window.location.pathname);
-  const DIRECT_ARCHIVE = /^\/archive\/?$/.test(window.location.pathname);
-  const DIRECT_RESUMES = /^\/resumes\/?$/.test(window.location.pathname);
-  // Re-read after every lock handoff; module-level snapshots survive unmounts.
-  const [INITIAL_STORAGE] = useState(inspectStoredDoc);
-  const [BOOT] = useState(() => bootstrap(INITIAL_STORAGE));
-  const [BOOT_UI] = useState(loadUi);
-  const [storageBlocked, setStorageBlocked] = useState(INITIAL_STORAGE.status === 'error');
-  const [snapshot, setSnapshot] = useState<Doc | null>(() => loadSnapshot());
-  const [recoveryError, setRecoveryError] = useState('');
-  const [doc, setDoc] = useState<Doc>(BOOT.doc);
-  const [librarySection, setLibrarySection] = useState<LibrarySection | null>(null);
-  const [archiveVisit, setArchiveVisit] = useState(0);
-  const [archiveTrashOpen, setArchiveTrashOpen] = useState(false);
-  const [archiveToolsOpen, setArchiveToolsOpen] = useState(BOOT_UI.archiveToolsOpen === true);
+  const translateAbort = useRef<AbortController | null>(null);
+  const cancelPendingWork = useCallback(() => translateAbort.current?.abort(), []);
+  const {
+    initialStorage, doc, setDoc, storageBlocked, setStorageBlocked, snapshot, recoveryError, setRecoveryError,
+    status, isDemo, importUndo, undoImportConfirm, setUndoImportConfirm, checkpoint,
+    restoreSnapshot: restoreDocumentSnapshot, commitImport: commitDocumentImport, undoImport: undoDocumentImport,
+    loadSample: loadDocumentSample, resetAll: resetDocument, dismissDemo,
+  } = useWorkspaceDocument(cancelPendingWork);
+  const {
+    mode, setMode, activeId, setActiveId, activeVariant, showVariant,
+    librarySection, setLibrarySection, selectLibrarySection, archiveVisit, setArchiveVisit,
+    archiveTrashOpen, setArchiveTrashOpen, archiveToolsOpen, setArchiveToolsOpen, followLibraryLink,
+  } = useWorkspaceRoute(doc);
   const [creatingCategory, setCreatingCategory] = useState(false);
-  const selectLibrarySection = (section: LibrarySection | null) => { setLibrarySection(section); setArchiveTrashOpen(false); };
-  const [mode, setModeState] = useState<WorkspaceMode>(
-    DIRECT_RESUMES || (DIRECT_EDITOR && BOOT.doc.variants.length === 0) ? 'resumes' : DIRECT_ARCHIVE || BOOT.doc.variants.length === 0 ? 'master' : DIRECT_EDITOR ? 'variant' : BOOT_UI.mode,
-  );
-  const [activeId, setActiveId] = useState<string | null>(new URLSearchParams(window.location.search).get('resume') ?? BOOT_UI.activeVariantId);
-  const setMode = (next: WorkspaceMode, resumeId?: string, replace = false) => {
-    const id = resumeId ?? activeId ?? doc.variants[0]?.id;
-    const path = next === 'master' ? '/archive' : next === 'resumes' ? '/resumes' : `/editor${id ? `?resume=${encodeURIComponent(id)}` : ''}`;
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history[replace ? 'replaceState' : 'pushState'](null, '', path);
-    if (next === 'variant' && id) setActiveId(id);
-    setModeState(next);
-  };
-  const followLibraryLink = (event: React.MouseEvent<HTMLAnchorElement>, next: 'master' | 'resumes') => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    if (next === 'master') { selectLibrarySection(null); setArchiveVisit(visit => visit + 1); }
-    setMode(next);
-  };
-  useEffect(() => {
-    const onPop = () => {
-      const path = window.location.pathname;
-      if (/^\/editor\/?$/.test(path) && doc.variants.length) {
-        const requested = new URLSearchParams(window.location.search).get('resume');
-        const id = doc.variants.find(v => v.id === requested)?.id ?? doc.variants[0].id;
-        setActiveId(id); setModeState('variant');
-        window.history.replaceState(null, '', `/editor?resume=${encodeURIComponent(id)}`);
-      } else {
-        const resumes = /^\/(resumes|editor)\/?$/.test(path);
-        setModeState(resumes ? 'resumes' : 'master');
-        if (!resumes) { selectLibrarySection(null); setArchiveVisit(visit => visit + 1); }
-        if (/^\/editor\/?$/.test(path)) window.history.replaceState(null, '', '/resumes');
-      }
-    };
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, [doc.variants]);
   const [previewRewrite,setPreviewRewrite]=useState<{variantId:string;section:SectionKey;groupId:string;bulletId:string;original:string;initial:string}|null>(null);
   const [trialText,setTrialText]=useState<string|null>(null);
   const [recentRewrite,setRecentRewrite]=useState<string|null>(null);
@@ -126,23 +64,12 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
   const checkOpen = workTab === 'check';
   const setCheckOpen = (open: boolean) => { setWorkTab(open ? 'check' : 'content'); setPane('edit'); };
   const [importOpen, setImportOpen] = useState(false);
-  const [importUndo, setImportUndo] = useState<ImportUndo | null>(() => loadImportUndo());
-  const [undoImportConfirm, setUndoImportConfirm] = useState(false);
-  useEscapeKey(() => setUndoImportConfirm(false), undoImportConfirm);
   const [translating, setTranslating] = useState(false);
   const [aiDialog, setAiDialog] = useState(false);
   const [configVersion, setConfigVersion] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [translateError, setTranslateError] = useState('');
-  const translateAbort = useRef<AbortController | null>(null);
-  const sessionActive = useRef(true);
-  useLayoutEffect(() => {
-    sessionActive.current = true;
-    return () => { sessionActive.current = false; translateAbort.current?.abort(); };
-  }, []);
   const autoTranslationAttempts = useRef(new Set<string>());
-  const [status, setStatus] = useState<'idle' | 'saved' | 'failed'>('idle');
-  const [isDemo, setIsDemo] = useState(BOOT.demo);
   const [pane, setPane] = useState<'edit' | 'preview'>('edit');
 
   useEffect(() => {
@@ -151,17 +78,6 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
   }, [workTab]);
   useEffect(() => { setWorkTab('content'); setPane('edit'); }, [mode]);
 
-  const activeVariant = doc.variants.find((v) => v.id === activeId) ?? doc.variants[0] ?? null;
-  const showVariant = mode === 'variant' && activeVariant !== null;
-  useEffect(() => {
-    const path = mode === 'variant' && activeVariant ? `/editor?resume=${encodeURIComponent(activeVariant.id)}` : mode === 'master' ? '/archive' : '/resumes';
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history.replaceState(null, '', path);
-    document.title = `${mode === 'variant' && activeVariant ? activeVariant.name || '未命名简历' : mode === 'resumes' ? '简历库' : '档案库'} · Profile CV`;
-  }, [mode, activeVariant?.id, activeVariant?.name]);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => document.querySelector('.panel')?.scrollTo({ top: 0 }));
-    return () => cancelAnimationFrame(frame);
-  }, [mode]);
   const layout = layoutFor(doc, showVariant ? activeVariant : null);
   const changeLayout = (patch: Partial<VariantLayout>) => {
     if (activeVariant) setDoc(d => updateVariantLayout(d, activeVariant.id, patch));
@@ -315,40 +231,6 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
     return () => window.clearTimeout(timer);
   }, [showVariant, activeVariant?.id, layout.locale, missing, translating, aiReady, configVersion, runTranslate]);
 
-  // 自动保存：每次改动后延迟写入，避免每次按键都写 localStorage。
-  useLayoutEffect(() => {
-    if (storageBlocked) {
-      const blockRelease = (event: Event) => {
-        event.preventDefault();
-        setRecoveryError('存档读取问题尚未处理，无法保存并结束编辑。请先导出原始存档，再保留副本并继续。');
-      };
-      window.addEventListener(FLUSH_WORKSPACE_EVENT, blockRelease);
-      return () => window.removeEventListener(FLUSH_WORKSPACE_EVENT, blockRelease);
-    }
-    const persist = () => {
-      if (!sessionActive.current) return false;
-      const saved = saveDoc(doc);
-      setStatus(saved ? 'saved' : 'failed');
-      return saved;
-    };
-    const onFlush = (event: Event) => { if (!persist()) event.preventDefault(); };
-    const onHidden = () => { if (document.visibilityState === 'hidden') persist(); };
-    const t = setTimeout(persist, 400);
-    window.addEventListener('pagehide', persist);
-    window.addEventListener(FLUSH_WORKSPACE_EVENT, onFlush);
-    document.addEventListener('visibilitychange', onHidden);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener('pagehide', persist);
-      window.removeEventListener(FLUSH_WORKSPACE_EVENT, onFlush);
-      document.removeEventListener('visibilitychange', onHidden);
-    };
-  }, [doc, storageBlocked]);
-
-  useEffect(() => {
-    saveUi({ mode: mode === 'variant' ? 'variant' : 'master', activeVariantId: activeVariant?.id ?? null, archiveToolsOpen });
-  }, [mode, activeVariant?.id, archiveToolsOpen]);
-
   useEffect(() => {
     if (!checkOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -358,61 +240,21 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [checkOpen]);
 
-  useEffect(() => {
-    if (status !== 'saved') return;
-    const t = setTimeout(() => setStatus('idle'), 1600);
-    return () => clearTimeout(t);
-  }, [status]);
-
-  const checkpoint = () => {
-    if (!sessionActive.current) return false;
-    if (storageBlocked) {
-      setRecoveryError('请先处理存档读取错误，再执行此操作。');
-      return false;
-    }
-    if (!saveSnapshot(doc)) {
-      setRecoveryError('无法保存恢复快照，操作已停止。请先导出 JSON 备份并检查存储空间。');
-      return false;
-    }
-    translateAbort.current?.abort();
-    setSnapshot(doc);
-    setRecoveryError('');
-    return true;
-  };
-
-  const restoreSnapshot = () => {
-    if (!snapshot || storageBlocked) return;
-    if (!window.confirm('恢复到上次重要操作之前？当前内容会保存为新的恢复快照。')) return;
-    const previous = snapshot;
-    if (!checkpoint()) return;
-    setDoc(previous);
-    setIsDemo(false);
-    setDemoFlag(false);
-    selectLibrarySection(null); setArchiveVisit(visit => visit + 1);
+  const returnToArchive = (section: LibrarySection | null = null) => {
+    selectLibrarySection(section);
+    if (section === null) setArchiveVisit(visit => visit + 1);
     setMode('master');
     setActiveId(null);
   };
-
+  const restoreSnapshot = () => { if (restoreDocumentSnapshot()) returnToArchive(); };
   const commitImport = (next: Doc): boolean => {
-    if (!checkpoint()) return false;
-    const receipt = { before: doc, after: next, wasDemo: isDemo };
-    if (!saveImportUndo(receipt)) { setRecoveryError('无法保存导入撤销记录，导入未执行。'); return false; }
-    if (!saveDoc(next)) {
-      if (importUndo) saveImportUndo(importUndo); else clearImportUndo();
-      setRecoveryError('浏览器存储空间不足，导入未执行。'); return false;
-    }
-    setImportUndo(receipt);
-    setDoc(next); setIsDemo(false); setDemoFlag(false);
-    setMode('master'); selectLibrarySection('基本信息'); setActiveId(null); setImportOpen(false);
+    if (!commitDocumentImport(next)) return false;
+    returnToArchive('基本信息');
+    setImportOpen(false);
     return true;
   };
   const undoImport = (confirmed = false) => {
-    if (!importUndo || storageBlocked) return;
-    if (!confirmed && JSON.stringify(doc) !== JSON.stringify(importUndo.after)) { setUndoImportConfirm(true); return; }
-    if (!checkpoint() || !saveDoc(importUndo.before)) { setRecoveryError('无法保存撤销结果，请先检查浏览器存储空间。'); return; }
-    setDoc(importUndo.before); setIsDemo(importUndo.wasDemo); setDemoFlag(importUndo.wasDemo);
-    setMode('master'); setActiveId(null); selectLibrarySection('基本信息');
-    setImportUndo(null); clearImportUndo(); setUndoImportConfirm(false);
+    if (undoDocumentImport(confirmed)) returnToArchive('基本信息');
   };
 
   const setMaster = (master: Master) => setDoc((d) => ({ ...d, master:collectMaterialDeletions(d.master,master) }));
@@ -455,32 +297,8 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
     if (rest.length === 0 && mode === 'variant') setMode('resumes', undefined, true);
   };
 
-  const loadSample = () => {
-    if (!window.confirm('载入示例会覆盖当前内容（含所有版本），建议先导出 JSON 备份。继续？')) return;
-    if (!checkpoint()) return;
-    setDoc(sampleDoc());
-    setIsDemo(true);
-    setDemoFlag(true);
-    selectLibrarySection(null); setArchiveVisit(visit => visit + 1);
-    setActiveId(null);
-    setMode('master');
-  };
-
-  const resetAll = () => {
-    if (!window.confirm('确定清空全部档案和简历？操作前会保存恢复快照，建议先下载完整备份。')) return;
-    if (!checkpoint()) return;
-    setDoc(emptyDoc());
-    setIsDemo(false);
-    setDemoFlag(false);
-    selectLibrarySection(null); setArchiveVisit(visit => visit + 1);
-    setActiveId(null);
-    setMode('master');
-  };
-
-  const dismissDemo = () => {
-    setIsDemo(false);
-    setDemoFlag(false);
-  };
+  const loadSample = () => { if (loadDocumentSample()) returnToArchive(); };
+  const resetAll = () => { if (resetDocument()) returnToArchive(); };
 
   const handlePrint = () => {
     // On phones the preview starts hidden, so paginate before print CSS hides the source.
@@ -543,15 +361,15 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
           <strong>存档读取失败，已暂停自动保存，原始数据未被覆盖。</strong>
           <span>可先导出原始存档，再保留副本并继续编辑，或刷新重试。</span>
           <button type="button" className="btn" onClick={() => window.location.reload()}>重新读取</button>
-          {INITIAL_STORAGE.status === 'error' && INITIAL_STORAGE.raw !== null && <>
+          {initialStorage.status === 'error' && initialStorage.raw !== null && <>
             <button type="button" className="btn" onClick={() => {
-              const url = URL.createObjectURL(new Blob([INITIAL_STORAGE.raw!], { type: 'application/json' }));
+              const url = URL.createObjectURL(new Blob([initialStorage.raw!], { type: 'application/json' }));
               const a = document.createElement('a');
               a.href = url; a.download = 'resume-recovery.json'; a.click();
               setTimeout(() => URL.revokeObjectURL(url), 1000);
             }}>导出原始存档</button>
             <button type="button" className="btn" onClick={() => {
-              if (preserveUnreadable(INITIAL_STORAGE.raw!)) setStorageBlocked(false);
+              if (preserveUnreadable(initialStorage.raw!)) setStorageBlocked(false);
               else setRecoveryError('原始存档备份失败，自动保存仍暂停。请导出原始存档并检查存储空间。');
             }}>保留原始副本并继续</button>
           </>}
@@ -729,7 +547,6 @@ export default function App({ onEndEditing }: { onEndEditing: () => void }) {
 
         </section>}
       </main>
-
 
       {creatingCategory && <CategoryCreateDialog master={doc.master} onClose={() => setCreatingCategory(false)} onCreate={category => {
         setMaster({ ...doc.master, customCategories: [...(doc.master.customCategories ?? []), category] });

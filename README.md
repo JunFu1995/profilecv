@@ -128,6 +128,8 @@ pnpm dlx wrangler pages deploy dist --project-name YOUR_PROJECT_NAME
 ```text
 src/
   components/       档案、简历编辑、预览及对话框
+    editor/         分章节表单、经历卡片与素材编辑操作
+  workspace/        路由与存档生命周期 hooks
   import/           文件文本提取、解析与导入
   assets/           插画与字体
   ai.ts             AI 配置和接口请求

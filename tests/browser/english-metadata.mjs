@@ -9,6 +9,8 @@ const {chromium} = await import(process.env.PLAYWRIGHT_MODULE_PATH || 'playwrigh
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5273';
 const doc = sampleDoc();
 doc.master.education[0].degree='本科';
+// Keep the date assertion independent of future sample resume edits.
+doc.master.work[0].start='2022.06';
 doc.master.work[0].end='至今';
 doc.translations={};
 for (const src of localizeView(buildView(doc.master),{}).missing) {
