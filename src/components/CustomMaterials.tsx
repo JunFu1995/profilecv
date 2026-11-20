@@ -1,0 +1,18 @@
+import { MaterialExample } from './MaterialExample';
+import { CategoryName } from './CategoryName';
+import { Hint } from './Hint';
+import { useState } from 'react';
+import type { CustomMaterialCategory } from '../types';
+import { uid } from '../id';
+export function CustomMaterials({category,onChange,onDelete}:{category:CustomMaterialCategory;onChange:(c:CustomMaterialCategory)=>void;onDelete:()=>void}) {
+ const [fieldName,setFieldName]=useState('');
+ const [error,setError]=useState('');
+ const patchItem=(id:string,patch:Partial<CustomMaterialCategory['items'][number]>)=>onChange({...category,items:category.items.map(i=>i.id===id?{...i,...patch}:i)});
+ return <section className="custom-material-panel"><header className="section-head"><CategoryName name={category.name} onSave={name=>onChange({...category,name})} onDelete={onDelete} headerActions={category.bodyHint ? <Hint label={`${category.name}填写说明`}><p>每条内容包含标题、正文，也可以添加自己的字段。</p><p>{category.bodyHint}</p></Hint> : <MaterialExample title={category.name} compact hint="每条内容包含标题、正文，也可以添加自己的字段。"/>}/><button className="btn btn-primary" onClick={()=>onChange({...category,items:[...category.items,{id:uid(),title:'',body:'',values:{}}]})}>添加内容</button></header>
+ <details className="custom-category-settings"><summary>类别与字段设置</summary><label className="field-block"><span className="field-label">类别名称</span><input value={category.name} onChange={e=>onChange({...category,name:e.target.value})}/></label>
+ <div className="custom-field-list">{category.fields.map(f=><div key={f.id}><label><span className="field-label">字段名称</span><input value={f.label} onChange={e=>onChange({...category,fields:category.fields.map(x=>x.id===f.id?{...x,label:e.target.value}:x)})}/></label><button className="btn" onClick={()=>{onChange({...category,fields:category.fields.filter(x=>x.id!==f.id),items:category.items.map(i=>({...i,values:Object.fromEntries(Object.entries(i.values).filter(([key])=>key!==f.id))}))});}}>删除字段</button></div>)}</div>
+ <div className="custom-field-add"><label><span className="field-label">新增字段名称</span><input value={fieldName} onChange={e=>setFieldName(e.target.value)} placeholder="例如：获奖时间、颁发机构"/></label><button className="btn" onClick={()=>{if(!fieldName.trim()){setError('请填写字段名称');return;}if(category.fields.some(f=>f.label===fieldName.trim())){setError('已有同名字段');return;}onChange({...category,fields:[...category.fields,{id:uid(),label:fieldName.trim()}]});setFieldName('');setError('');}}>添加字段</button></div>{error&&<p role="alert">{error}</p>}</details>
+ {!category.items.length&&<div className="library-empty"><strong>还没有内容</strong><p>添加第一条内容，记录获奖、证书、志愿服务或其他经历。</p></div>}
+ {category.items.map((item,index)=><article className="custom-material-item" key={item.id}><div className="custom-item-head"><strong>内容 {index+1}</strong><button className="btn" onClick={()=>{onChange({...category,items:category.items.filter(i=>i.id!==item.id)});}}>删除内容</button></div><label className="field-block"><span className="field-label">{category.titleLabel||'标题'}</span><input value={item.title} onChange={e=>patchItem(item.id,{title:e.target.value})}/></label><div className="grid-2">{category.fields.map(f=><label className="field-block" key={f.id}><span className="field-label">{f.label||'未命名字段'}</span><input value={item.values[f.id]??''} onChange={e=>patchItem(item.id,{values:{...item.values,[f.id]:e.target.value}})}/></label>)}</div><label className="field-block"><span className="field-label">{category.bodyLabel||'正文'}</span><textarea rows={4} placeholder={category.bodyHint} value={item.body} onChange={e=>patchItem(item.id,{body:e.target.value})}/></label></article>)}
+ </section>;
+}

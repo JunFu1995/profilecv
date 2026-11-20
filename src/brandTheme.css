@@ -1,0 +1,14 @@
+/* Shared with the homepage; keep document/paper template styles independent. */
+:root {
+  --brand-canvas: #fbf8e9;
+  --brand-paper: #fffdf5;
+  --brand-inset: #f3f3e4;
+  --brand-ink: #263d34;
+  --brand-muted: #5f7266;
+  --brand-line: #d7ddc5;
+  --brand-green: #47785c;
+  --brand-green-hover: #36694c;
+  --brand-soft: #eaf0df;
+  --brand-serif: 'Noto Serif SC', 'Songti SC', serif;
+  --brand-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}

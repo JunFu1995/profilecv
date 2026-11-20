@@ -1,0 +1,30 @@
+node_modules
+dist
+.shots
+.DS_Store
+*.log
+.vite
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
+*.pem
+*.key
+.codex/
+.agents/
+.aws/
+
+# Local builds, audits, deployment records and media production
+.pnpm-store/
+output/
+.audit-*/
+coverage/
+playwright-report/
+test-results/
+video/
+storybook-home-preview.png
+docs/superpowers/
